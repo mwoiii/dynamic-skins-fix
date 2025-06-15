@@ -2,7 +2,7 @@
 
 ## About
 
-A Risk of Rain 2 mod that aims to fix all dynamic skins after they were broken in the optimisation patch.
+A Risk of Rain 2 mod that aims to fix most dynamic skins after they were broken in the optimisation patch.
 
 ## Installation
 
