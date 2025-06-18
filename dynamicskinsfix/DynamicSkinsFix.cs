@@ -9,6 +9,8 @@ using System.Diagnostics;
 using System.Reflection;
 using UnityEngine;
 using UnityEngine.PlayerLoop;
+using HG;
+using R2API;
 
 namespace DynamicSkinsFix
 {
@@ -34,6 +36,7 @@ namespace DynamicSkinsFix
 
             IL.RoR2.SkinDef.ApplyAsync += CallObsolete;
             IL.RoR2.SkinDef.Apply += ObsoleteRet;
+            IL.RoR2.BodyCatalog.GetBodySkins += AccessOldArray;
         }
 
         private static void ObsoleteRet(ILContext il) {
@@ -75,6 +78,37 @@ namespace DynamicSkinsFix
                 c.Emit(OpCodes.Ldarg_0);
                 c.Emit(OpCodes.Ldarg_1);
                 c.EmitDelegate(applyDelegate);
+            } else {
+                Log.Error("ILHook failed. Some dynamic skins will not work, or worse");
+            }
+        }
+
+        private static void AccessOldArray(ILContext il) {
+            var rewriteDelegate = new Func<BodyIndex, SkinDef[]>((BodyIndex bodyIndex) => {
+                SkinDef[] bodySkinDefs = SkinCatalog.GetBodySkinDefs(bodyIndex);
+                if (bodySkinDefs.Length == 0) {
+                    SkinDef[][] array = BodyCatalog.skins;
+                    SkinDef[] defaultValue = Array.Empty<SkinDef>();
+                    return ArrayUtils.GetSafe(array, (int)bodyIndex, in defaultValue);
+                } else {
+                    return bodySkinDefs;
+                }
+            });
+
+            // branching over the entire original code and defining a new behaviour
+            // run the standard method. if no results, run the method how it was before 1.3.9 changed it
+            ILCursor c = new ILCursor(il);
+            if (c.TryGotoNext(MoveType.Before, x => x.MatchLdarg(0))) {
+                ILLabel skipLabel = c.DefineLabel();
+                c.Emit(OpCodes.Br, skipLabel);
+                if (c.TryGotoNext(MoveType.After, x => x.MatchRet())) {
+                    c.MarkLabel(skipLabel);
+                    c.Emit(OpCodes.Ldarg_0);
+                    c.EmitDelegate(rewriteDelegate);
+                    c.Emit(OpCodes.Ret);
+                } else {
+                    Log.Error("ILHook failed. Some dynamic skins will not work, or worse");
+                }
             } else {
                 Log.Error("ILHook failed. Some dynamic skins will not work, or worse");
             }
