@@ -11,6 +11,8 @@ using UnityEngine;
 using UnityEngine.PlayerLoop;
 using HG;
 using R2API;
+using UnityEngine.AddressableAssets;
+using RoR2.UI.MainMenu;
 
 namespace DynamicSkinsFix
 {
@@ -22,7 +24,7 @@ namespace DynamicSkinsFix
         public const string PluginGUID = PluginAuthor + "." + PluginName;
         public const string PluginAuthor = "Miyowi";
         public const string PluginName = "DynamicSkinsFix";
-        public const string PluginVersion = "1.0.0";
+        public const string PluginVersion = "1.0.3";
 
         private System.Random random = new System.Random();
 
@@ -34,6 +36,8 @@ namespace DynamicSkinsFix
         {
             Log.Init(Logger);
 
+            DupeRenderer();
+            // MainMenuController.OnMainMenuInitialised += RemoveDupeRenderer;
             IL.RoR2.SkinDef.ApplyAsync += CallObsolete;
             IL.RoR2.SkinDef.Apply += ObsoleteRet;
             IL.RoR2.BodyCatalog.GetBodySkins += AccessOldArray;
@@ -113,6 +117,43 @@ namespace DynamicSkinsFix
                 Log.Error("ILHook failed. Some dynamic skins will not work, or worse");
             }
         }
+
+        private static void DupeRenderer() {
+            GameObject crocoPrefab = Addressables.LoadAssetAsync<GameObject>("RoR2/Base/Croco/CrocoBody.prefab").WaitForCompletion();
+            if (crocoPrefab != null) {
+                GameObject mdlCroco = crocoPrefab.GetComponent<ModelLocator>().modelTransform.gameObject;
+                Transform spineMesh = mdlCroco.transform.Find("CrocoSpineMesh");
+                SkinnedMeshRenderer renderer = spineMesh.GetComponent<SkinnedMeshRenderer>();
+
+                // duplicating CrocoSpineMesh
+                // assigning the same name so that they have the same transformpath
+                // and sharing the mesh with the original renderer
+                // all so that renderer componentsinchildren[3] is valid
+                Transform dupe = Instantiate(mdlCroco.transform.Find("CrocoSpineMesh"));
+                SkinnedMeshRenderer newRenderer = dupe.GetComponent<SkinnedMeshRenderer>();
+                newRenderer.transform.name = "CrocoSpineMesh";
+                newRenderer.sharedMesh = renderer.sharedMesh;
+                dupe.parent = mdlCroco.transform;
+            } else {
+                Log.Error("Could not find CrocoBody Prefab. Acrid fixes not applied.");
+            }
+        }
+
+        /*
+        private static void RemoveDupeRenderer() {
+            
+            Log.Info("Removing dupe renderer");
+            GameObject crocoPrefab = Addressables.LoadAssetAsync<GameObject>("RoR2/Base/Croco/CrocoBody.prefab").WaitForCompletion();
+            if (crocoPrefab != null) {
+                GameObject mdlCroco = crocoPrefab.GetComponent<ModelLocator>().modelTransform.gameObject;
+                GameObject dupe = mdlCroco.GetComponentsInChildren<Renderer>(true)[3].gameObject;
+                Destroy(dupe);
+            } else {
+                Log.Error("Could not find CrocoBody Prefab for renderer removal. Acrid might look a little funny.");
+            }
+            
+        }
+        */
 
         private void FixedUpdate() {
             callCount = 0;
