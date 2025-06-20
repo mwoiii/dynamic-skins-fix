@@ -13,6 +13,7 @@ using HG;
 using R2API;
 using UnityEngine.AddressableAssets;
 using RoR2.UI.MainMenu;
+using System.Collections;
 
 namespace DynamicSkinsFix
 {
@@ -24,7 +25,7 @@ namespace DynamicSkinsFix
         public const string PluginGUID = PluginAuthor + "." + PluginName;
         public const string PluginAuthor = "Miyowi";
         public const string PluginName = "DynamicSkinsFix";
-        public const string PluginVersion = "1.0.3";
+        public const string PluginVersion = "1.0.4";
 
         private System.Random random = new System.Random();
 
@@ -37,7 +38,7 @@ namespace DynamicSkinsFix
             Log.Init(Logger);
 
             DupeRenderer();
-            // MainMenuController.OnMainMenuInitialised += RemoveDupeRenderer;
+            On.RoR2.SkinCatalog.Init += SwapAcridRenderer;
             IL.RoR2.SkinDef.ApplyAsync += CallObsolete;
             IL.RoR2.SkinDef.Apply += ObsoleteRet;
             IL.RoR2.BodyCatalog.GetBodySkins += AccessOldArray;
@@ -138,6 +139,27 @@ namespace DynamicSkinsFix
                 Log.Error("Could not find CrocoBody Prefab. Acrid fixes not applied.");
             }
         }
+
+        
+        private static IEnumerator SwapAcridRenderer(On.RoR2.SkinCatalog.orig_Init orig) {
+            GameObject crocoPrefab = Addressables.LoadAssetAsync<GameObject>("RoR2/Base/Croco/CrocoBody.prefab").WaitForCompletion();
+            GameObject modelTransformObj = crocoPrefab.GetComponent<ModelLocator>().modelTransform.gameObject;
+            ModelSkinController modelSkinController = modelTransformObj.GetComponent<ModelSkinController>();
+            Renderer[] componentsInChildren = modelTransformObj.GetComponentsInChildren<Renderer>(true);
+
+            Log.Info(modelSkinController.skins.Length);
+            foreach (SkinDef skinDef in modelSkinController.skins) {
+                Log.Info(skinDef.meshReplacements.Length);
+                if (skinDef.meshReplacements.Length >= 2) {
+                    skinDef.meshReplacements[0].renderer = componentsInChildren[1];
+                    skinDef.meshReplacements[1].renderer = componentsInChildren[2];
+                }
+            }
+
+            BodyCatalog.skins[(int)BodyCatalog.FindBodyIndex("CrocoBody")] = modelSkinController.skins;
+            return orig();
+        }
+
 
         /*
         private static void RemoveDupeRenderer() {
