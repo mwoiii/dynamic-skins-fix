@@ -1,27 +1,20 @@
-using BepInEx;
-using RoR2;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using Mono.Cecil.Cil;
-using MonoMod.Cil;
+using System.Collections;
 using System.Diagnostics;
 using System.Reflection;
-using UnityEngine;
-using UnityEngine.PlayerLoop;
+using BepInEx;
 using HG;
-using R2API;
+using Mono.Cecil.Cil;
+using MonoMod.Cil;
+using RoR2;
+using UnityEngine;
 using UnityEngine.AddressableAssets;
-using RoR2.UI.MainMenu;
-using System.Collections;
 
-namespace DynamicSkinsFix
-{
+namespace DynamicSkinsFix {
 
     [BepInPlugin(PluginGUID, PluginName, PluginVersion)]
 
-    public class DynamicSkinsFix : BaseUnityPlugin
-    {
+    public class DynamicSkinsFix : BaseUnityPlugin {
         public const string PluginGUID = PluginAuthor + "." + PluginName;
         public const string PluginAuthor = "Miyowi";
         public const string PluginName = "DynamicSkinsFix";
@@ -33,11 +26,11 @@ namespace DynamicSkinsFix
 
         private const int callLimit = 50;
 
-        public void Awake()
-        {
+        public void Awake() {
             Log.Init(Logger);
 
             DupeRenderer();
+            AttachAcridComponent();
             On.RoR2.SkinCatalog.Init += SwapAcridRenderer;
             IL.RoR2.SkinDef.ApplyAsync += CallObsolete;
             IL.RoR2.SkinDef.Apply += ObsoleteRet;
@@ -119,6 +112,11 @@ namespace DynamicSkinsFix
             }
         }
 
+        private static void AttachAcridComponent() {
+            GameObject crocoPrefab = Addressables.LoadAssetAsync<GameObject>("RoR2/Base/Croco/CrocoBody.prefab").WaitForCompletion();
+            crocoPrefab.AddComponent<FixAcridMissingGoo>();
+        }
+
         private static void DupeRenderer() {
             GameObject crocoPrefab = Addressables.LoadAssetAsync<GameObject>("RoR2/Base/Croco/CrocoBody.prefab").WaitForCompletion();
             if (crocoPrefab != null) {
@@ -140,19 +138,53 @@ namespace DynamicSkinsFix
             }
         }
 
-        
+
         private static IEnumerator SwapAcridRenderer(On.RoR2.SkinCatalog.orig_Init orig) {
             GameObject crocoPrefab = Addressables.LoadAssetAsync<GameObject>("RoR2/Base/Croco/CrocoBody.prefab").WaitForCompletion();
             GameObject modelTransformObj = crocoPrefab.GetComponent<ModelLocator>().modelTransform.gameObject;
             ModelSkinController modelSkinController = modelTransformObj.GetComponent<ModelSkinController>();
             Renderer[] componentsInChildren = modelTransformObj.GetComponentsInChildren<Renderer>(true);
 
-            Log.Info(modelSkinController.skins.Length);
             foreach (SkinDef skinDef in modelSkinController.skins) {
-                Log.Info(skinDef.meshReplacements.Length);
-                if (skinDef.meshReplacements.Length >= 2) {
-                    skinDef.meshReplacements[0].renderer = componentsInChildren[1];
-                    skinDef.meshReplacements[1].renderer = componentsInChildren[2];
+                bool interactedWithIndex3 = false;
+
+                for (int i = 0; i < skinDef.meshReplacements.Length; i++) {
+                    interactedWithIndex3 = componentsInChildren[3] == skinDef.meshReplacements[i].renderer;
+                    if (interactedWithIndex3) {
+                        break;
+                    }
+                }
+
+                if (!interactedWithIndex3) {
+                    for (int i = 0; i < skinDef.rendererInfos.Length; i++) {
+                        interactedWithIndex3 = componentsInChildren[3] == skinDef.rendererInfos[i].renderer;
+                        if (interactedWithIndex3) {
+                            break;
+                        }
+                    }
+
+                    for (int i = 0; i < skinDef.gameObjectActivations.Length; i++) {
+                        interactedWithIndex3 = componentsInChildren[3].gameObject == skinDef.gameObjectActivations[i].gameObject;
+                        if (interactedWithIndex3) {
+                            break;
+                        }
+                    }
+                }
+
+                // only if we can confirm it is incorrectly incremented - we cannot always confirm this
+                if (interactedWithIndex3) {
+
+                    for (int i = 0; i < skinDef.meshReplacements.Length; i++) {
+                        skinDef.meshReplacements[i].renderer = GetCorrectRenderer(skinDef.meshReplacements[i].renderer, componentsInChildren);
+                    }
+
+                    for (int i = 0; i < skinDef.meshReplacements.Length; i++) {
+                        skinDef.rendererInfos[i].renderer = GetCorrectRenderer(skinDef.rendererInfos[i].renderer, componentsInChildren);
+                    }
+
+                    for (int i = 0; i < skinDef.gameObjectActivations.Length; i++) {
+                        skinDef.gameObjectActivations[i].gameObject = GetCorrectGameObject(skinDef.gameObjectActivations[i], componentsInChildren);
+                    }
                 }
             }
 
@@ -160,6 +192,19 @@ namespace DynamicSkinsFix
             return orig();
         }
 
+        private static Renderer GetCorrectRenderer(Renderer renderer, Renderer[] componentsInChildren) {
+            // simply sub 1 to get correct index
+            return componentsInChildren[Array.IndexOf(componentsInChildren, renderer) - 1];
+        }
+        private static GameObject GetCorrectGameObject(SkinDef.GameObjectActivation gameObjectActivation, Renderer[] componentsInChildren) {
+            if (gameObjectActivation.gameObject == componentsInChildren[3].gameObject) {
+                return componentsInChildren[2].gameObject;
+            } else if (gameObjectActivation.gameObject == componentsInChildren[2].gameObject) {
+                return componentsInChildren[1].gameObject;
+            } else {
+                return componentsInChildren[0].gameObject;
+            }
+        }
 
         /*
         private static void RemoveDupeRenderer() {
