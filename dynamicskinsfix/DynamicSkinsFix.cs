@@ -178,7 +178,7 @@ namespace DynamicSkinsFix {
                         skinDef.meshReplacements[i].renderer = GetCorrectRenderer(skinDef.meshReplacements[i].renderer, componentsInChildren);
                     }
 
-                    for (int i = 0; i < skinDef.meshReplacements.Length; i++) {
+                    for (int i = 0; i < skinDef.rendererInfos.Length; i++) {
                         skinDef.rendererInfos[i].renderer = GetCorrectRenderer(skinDef.rendererInfos[i].renderer, componentsInChildren);
                     }
 
