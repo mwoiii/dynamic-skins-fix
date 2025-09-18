@@ -18,7 +18,7 @@ namespace DynamicSkinsFix {
         public const string PluginGUID = PluginAuthor + "." + PluginName;
         public const string PluginAuthor = "Miyowi";
         public const string PluginName = "DynamicSkinsFix";
-        public const string PluginVersion = "1.0.4";
+        public const string PluginVersion = "1.0.7";
 
         private System.Random random = new System.Random();
 
