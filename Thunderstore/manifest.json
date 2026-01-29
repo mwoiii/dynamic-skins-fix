@@ -1,0 +1,10 @@
+﻿{
+	"name": "DynamicSkinsFix",
+	"version_number": "1.0.8",
+	"website_url": "https://github.com/mwoiii/dynamic-skins-fix",
+	"description": "Aims to fix skins using dynamic bones that were broken after the optimisation update, as well as some other standard skinbuilder skins.",
+	"dependencies": [
+		"bbepis-BepInExPack-5.4.2108",
+		"RiskofThunder-HookGenPatcher-1.2.3"
+	]
+}

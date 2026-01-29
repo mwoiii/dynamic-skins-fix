@@ -1,12 +1,13 @@
-using System;
-using System.Collections;
-using System.Diagnostics;
-using System.Reflection;
 using BepInEx;
 using HG;
 using Mono.Cecil.Cil;
 using MonoMod.Cil;
 using RoR2;
+using RoR2.ContentManagement;
+using System;
+using System.Collections;
+using System.Diagnostics;
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 
@@ -18,9 +19,7 @@ namespace DynamicSkinsFix {
         public const string PluginGUID = PluginAuthor + "." + PluginName;
         public const string PluginAuthor = "Miyowi";
         public const string PluginName = "DynamicSkinsFix";
-        public const string PluginVersion = "1.0.7";
-
-        private System.Random random = new System.Random();
+        public const string PluginVersion = "1.0.8";
 
         private static int callCount;
 
@@ -32,9 +31,16 @@ namespace DynamicSkinsFix {
             DupeRenderer();
             AttachAcridComponent();
             On.RoR2.SkinCatalog.Init += SwapAcridRenderer;
+            On.RoR2.SurvivorMannequins.SurvivorMannequinSlotController.ApplyLoadoutToMannequinInstance += ApplyZeroFirst;
             IL.RoR2.SkinDef.ApplyAsync += CallObsolete;
             IL.RoR2.SkinDef.Apply += ObsoleteRet;
             IL.RoR2.BodyCatalog.GetBodySkins += AccessOldArray;
+        }
+
+        private static void ApplyZeroFirst(On.RoR2.SurvivorMannequins.SurvivorMannequinSlotController.orig_ApplyLoadoutToMannequinInstance orig, RoR2.SurvivorMannequins.SurvivorMannequinSlotController self) {
+            ModelSkinController componentInChildren = self.GetComponentInChildren<ModelSkinController>();
+            componentInChildren.StartCoroutine(componentInChildren.ApplySkinAsync(0, AsyncReferenceHandleUnloadType.OnSceneUnload));
+            orig(self);
         }
 
         private static void ObsoleteRet(ILContext il) {
