@@ -19,7 +19,7 @@ namespace DynamicSkinsFix {
         public const string PluginGUID = PluginAuthor + "." + PluginName;
         public const string PluginAuthor = "Miyowi";
         public const string PluginName = "DynamicSkinsFix";
-        public const string PluginVersion = "1.0.8";
+        public const string PluginVersion = "1.0.9";
 
         private static int callCount;
 
@@ -39,7 +39,9 @@ namespace DynamicSkinsFix {
 
         private static void ApplyZeroFirst(On.RoR2.SurvivorMannequins.SurvivorMannequinSlotController.orig_ApplyLoadoutToMannequinInstance orig, RoR2.SurvivorMannequins.SurvivorMannequinSlotController self) {
             ModelSkinController componentInChildren = self.GetComponentInChildren<ModelSkinController>();
-            componentInChildren.StartCoroutine(componentInChildren.ApplySkinAsync(0, AsyncReferenceHandleUnloadType.OnSceneUnload));
+            if (componentInChildren) {
+                componentInChildren.StartCoroutine(componentInChildren.ApplySkinAsync(0, AsyncReferenceHandleUnloadType.OnSceneUnload));
+            }
             orig(self);
         }
 

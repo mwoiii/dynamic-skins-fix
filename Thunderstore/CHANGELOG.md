@@ -1,3 +1,7 @@
+## 1.0.9
+
+- Nullcheck everything!!!
+
 ## 1.0.8
 
 - Bandaid fix for dynamic bone skins distorting in CSS when they are selected consecutively
