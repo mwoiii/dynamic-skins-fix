@@ -6,4 +6,4 @@ A Risk of Rain 2 mod that aims to fix most dynamic skins after they were broken 
 
 ## Installation
 
-[Install from Thunderstore with r2modman](https://thunderstore.io/package/mwmw/DynamicSkinsFix/)
+[Install from Thunderstore](https://thunderstore.io/package/mwmw/DynamicSkinsFix/)
