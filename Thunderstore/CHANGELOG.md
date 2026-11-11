@@ -1,11 +1,25 @@
+## 1.1.0
+
+- Made the stack overflow prevention less expensive (((probably)))
+
+- The methodology for preventing dynamic skin distortion in the CSS has been completely overhauled
+  - Applying the base skin to prevent conflicts is now done synchronously, preventing any race conditions that could have possibly existed in the past
+<br></br>
+    - The base skin is only applied first if a potential conflict is actually detected, rather than all the time
+<br></br>
+  - Fixed old (RuneFox implementation) dynamic skins distorting when switching to one from a new (KingEnderBrine implementation) dynamic skin
+
+## 1.0.10
+
+- Changed a method name <3
+
 ## 1.0.9
 
 - Nullcheck everything!!!
 
 ## 1.0.8
 
-- Bandaid fix for dynamic bone skins distorting in CSS when they are selected consecutively
-  - Does not address the core issues, instead gets around it by simply applying the base skin first
+- Fixed dynamic skins distorting in CSS when they are selected consecutively
 
 ## 1.0.7
 

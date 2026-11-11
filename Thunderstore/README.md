@@ -1,8 +1,9 @@
 # DynamicSkinsFix
 
-Aims to fix skins using dynamic bones that were broken after the optimisation update, and also fix some issues affecting skins for Engineer and Acrid.
+Fixes some skins using dynamic bones that have broken with updates, ensures dynamic skins display properly in the lobby, and also fixes some miscellaneous issues affecting old skins for Engineer and Acrid.
 
 # Contact
+
 Discord: miyowi
 
-[Ko-fi](https://ko-fi.com/miyowi)
+Ko-fi: [Miyowi](https://ko-fi.com/miyowi)

@@ -4,12 +4,14 @@ using Mono.Cecil.Cil;
 using MonoMod.Cil;
 using RoR2;
 using RoR2.ContentManagement;
+using RoR2.SurvivorMannequins;
 using System;
-using System.Collections;
+using System.Collections.Generic;
 using System.Diagnostics;
-using System.Reflection;
+using System.Linq;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
+
+#pragma warning disable CS0618
 
 namespace DynamicSkinsFix {
 
@@ -19,45 +21,79 @@ namespace DynamicSkinsFix {
         public const string PluginGUID = PluginAuthor + "." + PluginName;
         public const string PluginAuthor = "Miyowi";
         public const string PluginName = "DynamicSkinsFix";
-        public const string PluginVersion = "1.0.9";
+        public const string PluginVersion = "1.1.0";
 
-        private static int callCount;
+        private static List<Action> applyLoadoutToMannequinInstanceOrigs = new List<Action>();
 
-        private const int callLimit = 50;
+        private static HashSet<SkinDef> justCalledSkinDefApply = new HashSet<SkinDef>();
 
         public void Awake() {
             Log.Init(Logger);
 
-            DupeRenderer();
-            AttachAcridComponent();
-            On.RoR2.SkinCatalog.Init += SwapAcridRenderer;
-            On.RoR2.SurvivorMannequins.SurvivorMannequinSlotController.ApplyLoadoutToMannequinInstance += ApplyZeroFirst;
-            IL.RoR2.SkinDef.ApplyAsync += CallObsolete;
-            IL.RoR2.SkinDef.Apply += ObsoleteRet;
+            AcridFixes.Init();
+
+            On.RoR2.SurvivorMannequins.SurvivorMannequinSlotController.ApplyLoadoutToMannequinInstance += SelectivelyResetSkinAndDelay;
+            IL.RoR2.SkinDef.ApplyAsync += CallObsoleteApply;
+            IL.RoR2.SkinDef.Apply += PreventCyclicalCall;
             IL.RoR2.BodyCatalog.GetBodySkins += AccessOldArray;
         }
 
-        private static void ApplyZeroFirst(On.RoR2.SurvivorMannequins.SurvivorMannequinSlotController.orig_ApplyLoadoutToMannequinInstance orig, RoR2.SurvivorMannequins.SurvivorMannequinSlotController self) {
-            ModelSkinController componentInChildren = self.GetComponentInChildren<ModelSkinController>();
-            if (componentInChildren) {
-                componentInChildren.StartCoroutine(componentInChildren.ApplySkinAsync(0, AsyncReferenceHandleUnloadType.OnSceneUnload));
+        private static void SelectivelyResetSkinAndDelay(On.RoR2.SurvivorMannequins.SurvivorMannequinSlotController.orig_ApplyLoadoutToMannequinInstance orig, SurvivorMannequinSlotController self) {
+            if (!self.mannequinInstanceTransform) {
+                orig(self);
+                return;
             }
-            orig(self);
+
+            // setting up all the necessary data to determine the value of `shouldResetAndDelay`
+            // and one million nullchecks
+            var shouldResetAndDelay = false;
+            var skinController = self.GetComponentInChildren<ModelSkinController>();
+            var nextSkinIndex = (int)self.currentLoadout.bodyLoadoutManager.GetSkinIndex(SurvivorCatalog.GetBodyIndexFromSurvivorIndex(self.currentSurvivorDef.survivorIndex));
+            if (skinController && skinController.skins != null && skinController.skins.Length > 0 && nextSkinIndex < skinController.skins.Length) {
+                var baseSkin = skinController.skins[0];
+                var nextSkin = skinController.skins[nextSkinIndex];
+                nextSkin.BakeAsync().WaitForCompletion(20); // setting a call limit because ig vanilla bug they can just Not Finish but still work fine
+
+                if (baseSkin?.runtimeSkin?.meshReplacementTemplates != null && nextSkin?.runtimeSkin?.meshReplacementTemplates != null) {
+                    var baseMeshTemplates = baseSkin.runtimeSkin.meshReplacementTemplates;
+                    var nextMeshTemplates = nextSkin.runtimeSkin.meshReplacementTemplates;
+
+                    for (int i = 0; i < baseMeshTemplates.Length; i++) {
+                        var baseMeshTemplate = baseMeshTemplates[i];
+                        Mesh nextMesh = nextMeshTemplates.FirstOrDefault(x => x.transformPath == baseMeshTemplate.transformPath).meshReference.WaitForCompletion();
+
+                        var activeRenderer = skinController.transform.Find(baseMeshTemplate.transformPath).AsValidOrNull()?.GetComponent<SkinnedMeshRenderer>();
+                        var baseRenderer = baseSkin.rootObject?.transform.Find(baseMeshTemplate.transformPath).AsValidOrNull()?.GetComponent<SkinnedMeshRenderer>();
+
+                        if (activeRenderer &&
+                            baseRenderer &&
+                            nextMesh &&
+                            activeRenderer.bones.Length > baseRenderer.bones.Length &&              // if current mesh has extra bones
+                            nextMesh.GetBindposeCount() > baseRenderer.bones.Length &&              // and the next mesh has extra bones
+                            !nextMesh.bindposes.IsIdenticalTo(activeRenderer.sharedMesh.bindposes)  // and the current and next meshes are of a different armature
+                           ) {                                                                      // then we should apply base skin first and delay next skin by 1 frame
+                            shouldResetAndDelay = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (shouldResetAndDelay) {
+                skinController.ApplySkinAsync(0, AsyncReferenceHandleUnloadType.OnSceneUnload).WaitForCompletion(20);
+                applyLoadoutToMannequinInstanceOrigs.Add(() => { 
+                    orig(self);
+                });
+            } else {
+                orig(self);
+            }
         }
 
-        private static void ObsoleteRet(ILContext il) {
-            // return only if ApplyAsync is in the stacktrace (so most likely due to this mod)
-            var shouldReturnDelegate = new Func<bool>(() => {
-                callCount++;
-                StackTrace trace = new StackTrace();
-                foreach (StackFrame frame in trace.GetFrames()) {
-                    MethodBase method = frame.GetMethod();
-                    if (callCount > callLimit) {
-                        Log.Warning("Potential infinite loop detected. Aborting to prevent game crash");
-                        return true;
-                    } else if (method.Name == "DMD<RoR2.SkinDef::ApplyAsync>" || method.Name == "ApplyAsync") {
-                        return true;
-                    }
+        private static void PreventCyclicalCall(ILContext il) {
+            // skipping execution of the method if got here via the applyasync ilhook to prevent a crash
+            var shouldReturnDelegate = new Func<SkinDef, bool>((skinDef) => {
+                if (justCalledSkinDefApply.Contains(skinDef)) {
+                    return true;
                 }
                 return false;
             });
@@ -65,6 +101,7 @@ namespace DynamicSkinsFix {
             ILCursor c = new ILCursor(il);
             if (c.TryGotoNext(MoveType.Before, x => x.MatchLdarg(0))) {
                 ILLabel resumeLabel = c.DefineLabel();
+                c.Emit(OpCodes.Ldarg_0);
                 c.EmitDelegate(shouldReturnDelegate);
                 c.Emit(OpCodes.Brfalse, resumeLabel);
                 c.Emit(OpCodes.Ret);
@@ -74,9 +111,15 @@ namespace DynamicSkinsFix {
             }
         }
 
-        private static void CallObsolete(ILContext il) {
-            var applyDelegate = delegate (RoR2.SkinDef self, GameObject modelObject) {
+        private static void CallObsoleteApply(ILContext il) {
+            var applyDelegate = delegate (SkinDef self, GameObject modelObject) {
+                if (!justCalledSkinDefApply.Contains(self)) {
+                    justCalledSkinDefApply.Add(self);
+                }
                 self.Apply(modelObject);
+                if (justCalledSkinDefApply.Contains(self)) {
+                    justCalledSkinDefApply.Remove(self);
+                }
             };
 
             ILCursor c = new ILCursor(il);
@@ -120,118 +163,13 @@ namespace DynamicSkinsFix {
             }
         }
 
-        private static void AttachAcridComponent() {
-            GameObject crocoPrefab = Addressables.LoadAssetAsync<GameObject>("RoR2/Base/Croco/CrocoBody.prefab").WaitForCompletion();
-            crocoPrefab.AddComponent<FixAcridMissingGoo>();
-        }
-
-        private static void DupeRenderer() {
-            GameObject crocoPrefab = Addressables.LoadAssetAsync<GameObject>("RoR2/Base/Croco/CrocoBody.prefab").WaitForCompletion();
-            if (crocoPrefab != null) {
-                GameObject mdlCroco = crocoPrefab.GetComponent<ModelLocator>().modelTransform.gameObject;
-                Transform spineMesh = mdlCroco.transform.Find("CrocoSpineMesh");
-                SkinnedMeshRenderer renderer = spineMesh.GetComponent<SkinnedMeshRenderer>();
-
-                // duplicating CrocoSpineMesh
-                // assigning the same name so that they have the same transformpath
-                // and sharing the mesh with the original renderer
-                // all so that renderer componentsinchildren[3] is valid
-                Transform dupe = Instantiate(mdlCroco.transform.Find("CrocoSpineMesh"));
-                SkinnedMeshRenderer newRenderer = dupe.GetComponent<SkinnedMeshRenderer>();
-                newRenderer.transform.name = "CrocoSpineMesh";
-                newRenderer.sharedMesh = renderer.sharedMesh;
-                dupe.parent = mdlCroco.transform;
-            } else {
-                Log.Error("Could not find CrocoBody Prefab. Acrid fixes not applied.");
-            }
-        }
-
-
-        private static IEnumerator SwapAcridRenderer(On.RoR2.SkinCatalog.orig_Init orig) {
-            GameObject crocoPrefab = Addressables.LoadAssetAsync<GameObject>("RoR2/Base/Croco/CrocoBody.prefab").WaitForCompletion();
-            GameObject modelTransformObj = crocoPrefab.GetComponent<ModelLocator>().modelTransform.gameObject;
-            ModelSkinController modelSkinController = modelTransformObj.GetComponent<ModelSkinController>();
-            Renderer[] componentsInChildren = modelTransformObj.GetComponentsInChildren<Renderer>(true);
-
-            foreach (SkinDef skinDef in modelSkinController.skins) {
-                bool interactedWithIndex3 = false;
-
-                for (int i = 0; i < skinDef.meshReplacements.Length; i++) {
-                    interactedWithIndex3 = componentsInChildren[3] == skinDef.meshReplacements[i].renderer;
-                    if (interactedWithIndex3) {
-                        break;
-                    }
+        private void Update() {
+            if (applyLoadoutToMannequinInstanceOrigs.Count > 0) {
+                foreach (var origCall in applyLoadoutToMannequinInstanceOrigs) {
+                    origCall();
                 }
-
-                if (!interactedWithIndex3) {
-                    for (int i = 0; i < skinDef.rendererInfos.Length; i++) {
-                        interactedWithIndex3 = componentsInChildren[3] == skinDef.rendererInfos[i].renderer;
-                        if (interactedWithIndex3) {
-                            break;
-                        }
-                    }
-
-                    for (int i = 0; i < skinDef.gameObjectActivations.Length; i++) {
-                        interactedWithIndex3 = componentsInChildren[3].gameObject == skinDef.gameObjectActivations[i].gameObject;
-                        if (interactedWithIndex3) {
-                            break;
-                        }
-                    }
-                }
-
-                // only if we can confirm it is incorrectly incremented - we cannot always confirm this
-                if (interactedWithIndex3) {
-
-                    for (int i = 0; i < skinDef.meshReplacements.Length; i++) {
-                        skinDef.meshReplacements[i].renderer = GetCorrectRenderer(skinDef.meshReplacements[i].renderer, componentsInChildren);
-                    }
-
-                    for (int i = 0; i < skinDef.rendererInfos.Length; i++) {
-                        skinDef.rendererInfos[i].renderer = GetCorrectRenderer(skinDef.rendererInfos[i].renderer, componentsInChildren);
-                    }
-
-                    for (int i = 0; i < skinDef.gameObjectActivations.Length; i++) {
-                        skinDef.gameObjectActivations[i].gameObject = GetCorrectGameObject(skinDef.gameObjectActivations[i], componentsInChildren);
-                    }
-                }
+                applyLoadoutToMannequinInstanceOrigs.Clear();
             }
-
-            BodyCatalog.skins[(int)BodyCatalog.FindBodyIndex("CrocoBody")] = modelSkinController.skins;
-            return orig();
-        }
-
-        private static Renderer GetCorrectRenderer(Renderer renderer, Renderer[] componentsInChildren) {
-            // simply sub 1 to get correct index
-            return componentsInChildren[Array.IndexOf(componentsInChildren, renderer) - 1];
-        }
-        private static GameObject GetCorrectGameObject(SkinDef.GameObjectActivation gameObjectActivation, Renderer[] componentsInChildren) {
-            if (gameObjectActivation.gameObject == componentsInChildren[3].gameObject) {
-                return componentsInChildren[2].gameObject;
-            } else if (gameObjectActivation.gameObject == componentsInChildren[2].gameObject) {
-                return componentsInChildren[1].gameObject;
-            } else {
-                return componentsInChildren[0].gameObject;
-            }
-        }
-
-        /*
-        private static void RemoveDupeRenderer() {
-            
-            Log.Info("Removing dupe renderer");
-            GameObject crocoPrefab = Addressables.LoadAssetAsync<GameObject>("RoR2/Base/Croco/CrocoBody.prefab").WaitForCompletion();
-            if (crocoPrefab != null) {
-                GameObject mdlCroco = crocoPrefab.GetComponent<ModelLocator>().modelTransform.gameObject;
-                GameObject dupe = mdlCroco.GetComponentsInChildren<Renderer>(true)[3].gameObject;
-                Destroy(dupe);
-            } else {
-                Log.Error("Could not find CrocoBody Prefab for renderer removal. Acrid might look a little funny.");
-            }
-            
-        }
-        */
-
-        private void FixedUpdate() {
-            callCount = 0;
         }
     }
 }

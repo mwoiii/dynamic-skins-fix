@@ -1,13 +1,10 @@
 ﻿using BepInEx.Logging;
 
-namespace DynamicSkinsFix
-{
-    internal static class Log
-    {
+namespace DynamicSkinsFix {
+    internal static class Log {
         private static ManualLogSource _logSource;
 
-        internal static void Init(ManualLogSource logSource)
-        {
+        internal static void Init(ManualLogSource logSource) {
             _logSource = logSource;
         }
 
