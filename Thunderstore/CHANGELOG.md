@@ -1,3 +1,7 @@
+## 1.1.1
+
+- Fixed an NRE concerning some skins
+
 ## 1.1.0
 
 - Made the stack overflow prevention less expensive (((probably)))

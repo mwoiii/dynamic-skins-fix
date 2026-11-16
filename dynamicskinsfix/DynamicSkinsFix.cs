@@ -7,7 +7,6 @@ using RoR2.ContentManagement;
 using RoR2.SurvivorMannequins;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using UnityEngine;
 
@@ -21,7 +20,7 @@ namespace DynamicSkinsFix {
         public const string PluginGUID = PluginAuthor + "." + PluginName;
         public const string PluginAuthor = "Miyowi";
         public const string PluginName = "DynamicSkinsFix";
-        public const string PluginVersion = "1.1.0";
+        public const string PluginVersion = "1.1.1";
 
         private static List<Action> applyLoadoutToMannequinInstanceOrigs = new List<Action>();
 
@@ -60,7 +59,7 @@ namespace DynamicSkinsFix {
 
                     for (int i = 0; i < baseMeshTemplates.Length; i++) {
                         var baseMeshTemplate = baseMeshTemplates[i];
-                        Mesh nextMesh = nextMeshTemplates.FirstOrDefault(x => x.transformPath == baseMeshTemplate.transformPath).meshReference.WaitForCompletion();
+                        Mesh nextMesh = nextMeshTemplates.FirstOrDefault(x => x.transformPath == baseMeshTemplate.transformPath).meshReference?.WaitForCompletion();
 
                         var activeRenderer = skinController.transform.Find(baseMeshTemplate.transformPath).AsValidOrNull()?.GetComponent<SkinnedMeshRenderer>();
                         var baseRenderer = baseSkin.rootObject?.transform.Find(baseMeshTemplate.transformPath).AsValidOrNull()?.GetComponent<SkinnedMeshRenderer>();
@@ -81,7 +80,7 @@ namespace DynamicSkinsFix {
 
             if (shouldResetAndDelay) {
                 skinController.ApplySkinAsync(0, AsyncReferenceHandleUnloadType.OnSceneUnload).WaitForCompletion(20);
-                applyLoadoutToMannequinInstanceOrigs.Add(() => { 
+                applyLoadoutToMannequinInstanceOrigs.Add(() => {
                     orig(self);
                 });
             } else {
